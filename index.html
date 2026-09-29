@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="First-person walkthrough of Novara Media HQ at Fitzroy House, Hackney.">
+<meta name="theme-color" content="#0f1112">
+<title>Novara Media HQ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed 3D view; drawing-sheet HUD pinned to the corners, plan strip along the bottom like a title block */
+:root{
+  --ink:#0f1112;          /* night ground behind the model */
+  --panel:rgba(16,18,19,.78);
+  --line:rgba(236,232,224,.18);
+  --paper:#ece8e0;        /* off-white microcement */
+  --muted:#a7a39b;
+  --red:#ff1941;          /* Novara red */
+  --display:"Archivo", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme:dark;
+}
+[hidden]{display:none!important}
+html,body{height:100%;background:var(--ink);color:var(--paper);overflow:hidden}
+body{font-family:var(--display);-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent}
+#stage{position:fixed;inset:0;touch-action:none}
+#stage canvas{display:block;width:100%;height:100%;touch-action:none}
+
+/* HUD */
+.hud{position:fixed;z-index:5;pointer-events:none}
+#where{top:calc(env(safe-area-inset-top,0px) + 12px);left:16px;display:grid;gap:3px;padding:7px 10px 8px;background:var(--panel);border:1px solid var(--line);border-radius:3px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#where .sheet{font:500 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+#where .room{font:750 clamp(18px,3.4vw,26px)/1.05 var(--display);font-stretch:78%;letter-spacing:.01em}
+#tools{top:calc(env(safe-area-inset-top,0px) + 12px);right:16px;display:flex;gap:8px;pointer-events:auto}
+.btn{font:600 12px/1 var(--display);font-stretch:90%;letter-spacing:.06em;text-transform:uppercase;color:var(--paper);background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:10px 12px;cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.btn:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.btn[aria-pressed="true"]{border-color:var(--red);color:#fff}
+
+/* rooms menu */
+#rooms{position:fixed;z-index:6;top:calc(env(safe-area-inset-top,0px) + 56px);right:16px;width:min(280px,calc(100vw - 32px));max-height:calc(100% - 200px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:6px;display:grid;gap:2px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+#rooms button{all:unset;display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:2px;cursor:pointer;font:600 14px/1.2 var(--display);font-stretch:88%}
+#rooms button span{font:400 10px/1.2 var(--mono);color:var(--muted);letter-spacing:.06em;align-self:center}
+#rooms button:hover,#rooms button:focus-visible{background:rgba(255,25,65,.16)}
+
+/* plan strip */
+#plan{position:fixed;z-index:5;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);display:flex;justify-content:center;pointer-events:none}
+#planWrap{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:8px 10px 6px;max-width:760px;width:100%;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+#planCanvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+#planWrap .cap{display:flex;justify-content:space-between;gap:8px;margin-top:4px;font:400 9.5px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+body.mobile #plan{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 70px);left:16px;right:16px}
+body.mobile #planWrap{max-width:min(330px,46vw);margin-left:0;margin-right:auto;padding:6px 7px 4px}
+body.mobile #planWrap .cap{font-size:8.5px}
+body.mobile #plan{justify-content:flex-start}
+
+/* crosshair */
+#dot{position:fixed;left:50%;top:50%;width:4px;height:4px;margin:-2px 0 0 -2px;border-radius:50%;background:rgba(255,255,255,.7);z-index:4;pointer-events:none}
+
+/* joystick */
+#stick{position:fixed;z-index:6;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:1.5px solid rgba(236,232,224,.35);background:rgba(16,18,19,.25);pointer-events:none}
+#stick i{position:absolute;left:50%;top:50%;width:48px;height:48px;margin:-24px 0 0 -24px;border-radius:50%;background:rgba(236,232,224,.8)}
+#hint{position:fixed;z-index:5;left:16px;right:16px;bottom:calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;justify-content:space-between;font:400 10px/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);pointer-events:none}
+
+/* start sheet */
+#intro{position:fixed;inset:0;z-index:10;display:grid;place-items:center;overflow-y:auto;padding-inline:16px;padding-block:env(safe-area-inset-top,0px) env(safe-area-inset-bottom,0px);background:radial-gradient(120% 90% at 30% 20%,rgba(255,25,65,.10),transparent 60%),rgba(12,13,14,.86);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.card{width:min(560px,100%);display:grid;gap:18px;padding-block:24px}
+.eyebrow{font:500 11px/1.4 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px 14px}
+.eyebrow b{color:var(--red);font-weight:500}
+h1{margin:0;font:800 clamp(40px,11vw,76px)/.9 var(--display);font-stretch:68%;letter-spacing:-.01em;text-wrap:balance}
+h1 em{font-style:normal;color:var(--red)}
+.lede{margin:0;max-width:52ch;font:400 16px/1.5 var(--display);font-stretch:100%;color:#d7d3cb}
+.keys{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:0;font:400 13px/1.35 var(--display)}
+.keys dt{font:500 11px/1.9 var(--mono);letter-spacing:.06em;color:var(--paper)}
+.keys dt kbd{display:inline-block;min-width:18px;padding:0 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:3px;text-align:center;margin-right:3px;font:inherit}
+.keys dd{margin:0;color:#cfcac1}
+.go{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+#enter{font:750 16px/1 var(--display);font-stretch:85%;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--red);border:0;border-radius:3px;padding:16px 26px;cursor:pointer}
+#enter:disabled{background:#3a3c3d;color:var(--muted);cursor:progress}
+#enter:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.bar{flex:1;min-width:140px;height:3px;background:var(--line);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0 auto 0 0;width:0;background:var(--paper);transition:width .2s}
+#status{font:400 11px/1.3 var(--mono);letter-spacing:.06em;color:var(--muted);font-variant-numeric:tabular-nums}
+.foot{font:400 10.5px/1.5 var(--mono);color:var(--muted);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:12px}
+.only-touch{display:none}
+body.mobile .only-touch{display:revert}
+body.mobile .only-desk{display:none}
+@media (max-height:540px){
+  .card{gap:10px;padding-block:14px;width:min(760px,100%);grid-template-columns:1fr 1fr;column-gap:28px;align-items:start}
+  .eyebrow,.foot{grid-column:1/-1}
+  h1{font-size:44px}
+  .lede{font-size:14px;grid-row:3}
+  .keys{grid-column:2;grid-row:2 / span 2}
+  .go{grid-column:2}
+  .foot{display:none}
+}
+@media (max-height:540px) and (max-width:560px){.card{grid-template-columns:1fr}.keys,.go,.lede{grid-column:1;grid-row:auto}}
+@media (prefers-reduced-motion: reduce){.bar i{transition:none}}
+</style>
+
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="dot" class="hud" hidden></div>
+
+<div id="where" class="hud" hidden>
+  <div class="sheet">Novara Media HQ</div>
+  <div class="room" id="roomName">Stair lobby</div>
+</div>
+<div id="tools" class="hud" hidden>
+  <button class="btn" id="roomsBtn" aria-expanded="false" aria-controls="rooms">Go to</button>
+  <button class="btn" id="mapBtn" aria-pressed="true">Plan</button>
+</div>
+<nav id="rooms" hidden aria-label="Jump to a room"></nav>
+
+<div id="plan" hidden>
+  <div id="planWrap">
+    <canvas id="planCanvas" width="1520" height="400" aria-label="Floor plan. Tap to move there."></canvas>
+    <div class="cap"><span>Plan · tap to move</span><span id="coords">x 3.2 · y 6.3</span></div>
+  </div>
+</div>
+<div id="stick" hidden><i></i></div>
+<div id="hint" class="only-touch" hidden><span>Left thumb · walk</span><span>Right thumb · look</span></div>
+
+<section id="intro">
+  <div class="card">
+    <div class="eyebrow"><span>Walkthrough</span><span>Fitzroy House, Abbot St E8</span><b>Model v1 · 29.09.2026</b></div>
+    <h1>Novara Media <em>HQ</em></h1>
+    <p class="lede">The FH3 fit-out as drawn on 095/101 rev E: office, co-working, gallery, both studios and the green room, at eye height. Doors open as you reach them.</p>
+    <dl class="keys only-desk">
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>Walk. Hold Shift to go faster.</dd>
+      <dt>Mouse</dt><dd>Look around. Click the view to take control, Esc to let go.</dd>
+      <dt>Plan</dt><dd>Click anywhere on the plan to jump there.</dd>
+    </dl>
+    <dl class="keys only-touch">
+      <dt>Left thumb</dt><dd>Drag to walk.</dd>
+      <dt>Right thumb</dt><dd>Drag to look around.</dd>
+      <dt>Plan</dt><dd>Tap anywhere on the plan to jump there. Landscape works best.</dd>
+    </dl>
+    <div class="go">
+      <button id="enter" disabled>Loading model</button>
+      <div class="bar" aria-hidden="true"><i id="barFill"></i></div>
+      <span id="status">0.0 / 5.0 MB</span>
+    </div>
+    <div class="foot">Architecture after zector architects 095/101 rev E, 110 rev B, 111 rev A, 121 rev C. Heights: slab soffit 3.50, rib soffit 3.28, beam soffit 2.98. Set design and furniture indicative.</div>
+  </div>
+</section>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script id="coll" type="application/json">{"rects":[[12.605,0.175,0.185,0.175,0,"w"],[13.9,0.175,1.11,0.175,0,"w"],[15.235,0.175,0.225,0.175,0,"w"],[16.595,0.175,1.135,0.175,0,"w"],[17.92,0.175,0.19,0.175,0,"w"],[19.255,0.175,1.145,0.175,0,"w"],[20.59,0.175,0.19,0.175,0,"w"],[21.925,0.175,1.145,0.175,0,"w"],[23.26,0.175,0.19,0.175,0,"w"],[24.595,0.175,1.145,0.175,0,"w"],[25.93,0.175,0.19,0.175,0,"w"],[27.27,0.175,1.15,0.175,0,"w"],[28.445,0.175,0.025,0.175,0,"w"],[29.085,0.175,0.615,0.175,0,"w"],[29.775,0.175,0.075,0.175,0,"w"],[30.1,0.175,0.25,0.175,0,"w"],[31.395,0.175,0.045,0.175,0,"w"],[32.6,0.175,1.16,0.175,0,"w"],[33.95,0.175,0.19,0.175,0,"w"],[35.285,0.175,1.145,0.175,0,"w"],[36.62,0.175,0.19,0.175,0,"w"],[37.955,0.175,1.145,0.175,0,"w"],[39.29,0.175,0.19,0.175,0,"w"],[40.625,0.175,1.145,0.175,0,"w"],[41.84,0.175,0.07,0.175,0,"w"],[43.305,0.175,1.395,0.175,0,"w"],[44.765,0.175,0.065,0.175,0,"w"],[45.97,0.175,1.14,0.175,0,"w"],[47.13,0.175,0.02,0.175,0,"w"],[47.605,0.175,0.455,0.175,0,"w"],[48.23,0.175,0.17,0.175,0,"w"],[2.15,12.125,0.4,0.175,0,"w"],[3.5,12.125,0.95,0.175,0,"w"],[4.65,12.125,0.2,0.175,0,"w"],[5.75,12.125,0.9,0.175,0,"w"],[7.125,12.125,0.475,0.175,0,"w"],[8.65,12.125,1.05,0.175,0,"w"],[9.9,12.125,0.2,0.175,0,"w"],[11.21,12.125,1.11,0.175,0,"w"],[12.555,12.125,0.235,0.175,0,"w"],[13.905,12.125,1.115,0.175,0,"w"],[15.245,12.125,0.225,0.175,0,"w"],[16.605,12.125,1.135,0.175,0,"w"],[17.94,12.125,0.2,0.175,0,"w"],[19.275,12.125,1.135,0.175,0,"w"],[20.595,12.125,0.185,0.175,0,"w"],[21.925,12.125,1.145,0.175,0,"w"],[23.26,12.125,0.19,0.175,0,"w"],[24.595,12.125,1.145,0.175,0,"w"],[25.93,12.125,0.19,0.175,0,"w"],[28.57,12.125,2.45,0.175,0,"w"],[31.27,12.125,0.25,0.175,0,"w"],[32.985,12.125,1.465,0.175,0,"w"],[34.685,12.125,0.235,0.175,0,"w"],[35.285,12.125,0.365,0.175,0,"w"],[36.045,12.125,0.395,0.175,0,"w"],[37.74,12.125,1.3,0.175,0,"w"],[39.455,12.125,0.415,0.175,0,"w"],[40.575,12.125,0.705,0.175,0,"w"],[41.745,12.125,0.465,0.175,0,"w"],[42.595,12.125,0.385,0.175,0,"w"],[43.555,12.125,0.575,0.175,0,"w"],[44.28,12.125,0.15,0.175,0,"w"],[44.83,12.125,0.4,0.175,0,"w"],[46.645,12.125,1.415,0.175,0,"w"],[48.23,12.125,0.17,0.175,0,"w"],[2.675,1.91,1.775,0.14,0,"w"],[5.9,1.91,1.45,0.14,0,"w"],[7.425,1.91,0.075,0.14,0,"w"],[8.0,1.91,0.5,0.14,0,"w"],[8.575,1.91,0.075,0.14,0,"w"],[9.15,1.91,0.5,0.14,0,"w"],[9.85,1.91,0.2,0.14,0,"w"],[10.55,1.91,0.5,0.14,0,"w"],[11.125,1.91,0.075,0.14,0,"w"],[11.7,1.91,0.5,0.14,0,"w"],[12.31,1.91,0.11,0.14,0,"w"],[48.23,0.25,0.17,0.25,0,"w"],[48.23,1.45,0.17,0.95,0,"w"],[48.23,6.3,0.17,3.9,0,"w"],[48.23,11.05,0.17,0.85,0,"w"],[48.23,12.1,0.17,0.2,0,"w"],[0.725,3.985,0.175,2.215,0,"w"],[0.725,9.25,0.175,2.25,0,"w"],[12.52,0.885,0.1,0.885,0,"w"],[12.605,9.826,0.15,0.3,0,"w"],[17.942,9.826,0.15,0.3,0,"w"],[23.278,9.826,0.15,0.3,0,"w"],[28.614,9.826,0.15,0.3,0,"w"],[33.951,9.826,0.15,0.3,0,"w"],[39.288,9.826,0.15,0.3,0,"w"],[12.605,2.516,0.15,0.3,0,"w"],[17.942,2.516,0.15,0.3,0,"w"],[23.278,2.516,0.15,0.3,0,"w"],[28.614,2.516,0.15,0.3,0,"w"],[33.951,2.516,0.15,0.3,0,"w"],[39.288,2.516,0.15,0.3,0,"w"],[1.725,11.885,0.825,0.065,0,"w"],[4.65,11.885,0.2,0.065,0,"w"],[7.125,11.885,0.475,0.065,0,"w"],[9.9,11.885,0.2,0.065,0,"w"],[12.555,11.885,0.235,0.065,0,"w"],[15.245,11.885,0.225,0.065,0,"w"],[17.94,11.885,0.2,0.065,0,"w"],[20.595,11.885,0.185,0.065,0,"w"],[23.26,11.885,0.19,0.065,0,"w"],[25.785,11.885,0.045,0.065,0,"w"],[3.5,11.885,0.95,0.065,0,"w"],[5.75,11.885,0.9,0.065,0,"w"],[8.65,11.885,1.05,0.065,0,"w"],[11.21,11.885,1.11,0.065,0,"w"],[13.905,11.885,1.115,0.065,0,"w"],[16.605,11.885,1.135,0.065,0,"w"],[19.275,11.885,1.135,0.065,0,"w"],[21.925,11.885,1.145,0.065,0,"w"],[24.595,11.885,1.145,0.065,0,"w"],[2.675,2.036,1.775,0.065,0,"w"],[7.425,2.036,0.075,0.065,0,"w"],[8.575,2.036,0.075,0.065,0,"w"],[9.85,2.036,0.2,0.065,0,"w"],[11.125,2.036,0.075,0.065,0,"w"],[12.31,2.036,0.11,0.065,0,"w"],[5.9,2.036,1.45,0.065,0,"w"],[8.0,2.036,0.5,0.065,0,"w"],[9.15,2.036,0.5,0.065,0,"w"],[10.55,2.036,0.5,0.065,0,"w"],[11.7,2.036,0.5,0.065,0,"w"],[12.605,0.415,0.185,0.065,0,"w"],[15.235,0.415,0.225,0.065,0,"w"],[17.92,0.415,0.19,0.065,0,"w"],[20.59,0.415,0.19,0.065,0,"w"],[23.26,0.415,0.19,0.065,0,"w"],[25.785,0.415,0.045,0.065,0,"w"],[13.9,0.415,1.11,0.065,0,"w"],[16.595,0.415,1.135,0.065,0,"w"],[19.255,0.415,1.145,0.065,0,"w"],[21.925,0.415,1.145,0.065,0,"w"],[24.595,0.415,1.145,0.065,0,"w"],[44.624,9.826,0.15,0.3,0,"w"],[4.445,9.453,0.075,2.497,0,"w"],[7.226,9.45,0.128,2.5,0,"w"],[6.265,6.95,0.075,0.1,0,"w"],[5.457,3.811,0.149,1.761,0,"w"],[44.63,1.795,0.07,1.445,0,"w"],[46.335,4.13,1.725,0.1,0,"w"],[42.35,1.72,0.07,1.37,0,"w"],[44.49,1.72,0.07,1.37,0,"w"],[42.44,3.02,0.16,0.07,0,"w"],[44.405,3.02,0.155,0.07,0,"w"],[10.825,5.476,1.575,0.095,0,"w"],[12.494,2.06,0.095,0.13,0,"w"],[12.494,4.185,0.095,1.355,0,"w"],[12.494,6.98,0.095,0.57,0,"w"],[12.494,8.955,0.095,0.525,0,"w"],[12.494,11.035,0.095,0.915,0,"w"],[18.01,7.08,5.52,0.095,0,"w"],[24.495,7.08,0.205,0.095,0,"w"],[25.65,7.08,0.18,0.095,0,"w"],[23.1,8.315,0.095,1.155,0,"w"],[23.1,10.19,0.095,0.08,0,"w"],[24.5,8.045,0.095,0.885,0,"w"],[24.505,9.01,1.325,0.095,0,"w"],[24.245,10.49,0.085,0.095,0,"w"],[23.845,11.5,0.485,0.095,0,"w"],[23.27,11.685,0.095,0.265,0,"w"],[31.225,10.835,0.095,1.115,0,"w"],[39.435,6.17,0.095,0.08,0,"w"],[41.105,6.17,0.565,0.095,0,"w"],[25.965,7.915,0.135,4.035,0,"w"],[30.285,2.105,0.135,0.085,0,"w"],[30.285,6.335,0.135,3.105,0,"w"],[31.44,9.575,1.29,0.135,0,"w"],[36.56,9.575,2.48,0.135,0,"w"],[41.805,4.6,0.135,0.08,0,"w"],[41.805,7.8,0.135,2.08,0,"w"],[41.805,11.35,0.135,0.6,0,"w"],[43.18,9.585,1.24,0.135,0,"w"],[46.425,9.585,1.635,0.135,0,"w"],[46.29,4.365,1.67,0.135,0,"w"],[25.965,0.545,0.135,0.205,0,"w"],[25.965,2.68,0.135,0.94,0,"w"],[27.255,1.87,1.155,0.13,0,"w"],[26.685,3.75,0.855,0.13,0,"w"],[28.54,3.75,0.14,0.13,0,"w"],[28.545,1.955,0.135,0.215,0,"w"],[28.545,3.215,0.135,0.405,0,"w"],[28.84,3.7,0.15,0.095,0,"w"],[29.995,3.7,0.155,0.095,0,"w"],[31.33,1.87,1.52,0.13,0,"w"],[32.985,2.155,0.135,0.415,0,"w"],[33.285,2.695,0.435,0.125,0,"w"],[36.795,2.71,2.245,0.09,0,"w"],[39.225,3.515,0.135,0.715,0,"w"],[39.3,4.365,0.21,0.135,0,"w"],[41.105,4.365,0.565,0.135,0,"w"],[43.28,4.365,1.34,0.135,0,"w"],[42.035,3.165,0.095,0.075,0,"w"],[44.54,3.165,0.08,0.075,0,"w"],[48.01,6.975,0.05,2.475,0,"w"],[39.225,6.975,0.135,2.465,0,"w"],[3.02,7.056,1.349,0.1,0,"w"],[6.383,7.056,1.067,0.1,0,"w"],[44.605,9.585,0.185,0.135,0,"w"],[33.9,9.575,0.18,0.135,0,"w"],[34.135,2.71,0.415,0.09,0,"w"],[29.76,1.87,0.05,0.13,0,"w"],[23.135,10.345,0.115,0.095,0,"w"],[24.99,10.345,0.84,0.095,0,"w"],[6.265,5.665,0.075,0.285,0,"w"],[7.36,5.476,1.02,0.095,0,"w"],[7.295,3.74,0.095,1.641,0,"w"],[47.94,5.119,0.02,0.615,0,"w"],[47.94,5.119,0.02,0.615,0,"w"],[47.94,6.356,0.02,0.615,0,"w"],[47.94,6.356,0.02,0.615,0,"w"],[47.94,7.594,0.02,0.615,0,"w"],[47.94,7.594,0.02,0.615,0,"w"],[47.94,8.831,0.02,0.615,0,"w"],[47.94,8.831,0.02,0.615,0,"w"],[12.585,9.826,0.186,0.315,0,"w"],[23.224,9.87,0.219,0.4,0,"w"],[33.951,9.79,0.165,0.351,0,"w"],[39.271,9.79,0.181,0.351,0,"w"],[44.624,9.795,0.165,0.345,0,"w"],[12.585,2.51,0.186,0.32,0,"w"],[28.594,2.49,0.184,0.32,0,"w"],[33.951,2.5,0.165,0.299,0,"w"],[39.271,2.516,0.181,0.315,0,"w"],[12.585,9.826,0.186,0.315,0,"w"],[23.224,9.87,0.219,0.4,0,"w"],[33.951,9.79,0.165,0.351,0,"w"],[39.271,9.79,0.181,0.351,0,"w"],[44.624,9.795,0.165,0.345,0,"w"],[12.585,2.51,0.186,0.32,0,"w"],[28.594,2.49,0.184,0.32,0,"w"],[33.951,2.5,0.165,0.299,0,"w"],[39.271,2.516,0.181,0.315,0,"w"],[1.746,7.995,0.075,0.87,0,"w"],[2.663,8.223,0.074,1.098,0,"w"],[3.558,8.223,0.074,1.098,0,"w"],[4.445,7.995,0.075,0.87,0,"w"],[2.204,8.845,0.384,0.02,0,"w"],[2.204,7.485,0.185,0.34,0,"w"],[2.204,7.245,0.225,0.1,0,"w"],[3.11,9.302,0.373,0.02,0,"w"],[3.11,7.485,0.185,0.34,0,"w"],[3.11,7.245,0.225,0.1,0,"w"],[4.001,8.845,0.369,0.02,0,"w"],[4.001,7.485,0.185,0.34,0,"w"],[4.001,7.245,0.225,0.1,0,"w"],[5.38,8.234,0.064,1.109,0,"w"],[6.275,8.234,0.064,1.109,0,"w"],[5.827,9.324,0.384,0.02,0,"w"],[5.827,7.485,0.185,0.34,0,"w"],[5.827,7.245,0.225,0.1,0,"w"],[6.712,9.324,0.372,0.02,0,"w"],[6.712,7.485,0.185,0.34,0,"w"],[6.711,7.245,0.225,0.1,0,"w"],[2.758,11.53,0.277,0.207,0,"w"],[2.758,11.637,0.09,0.1,0,"w"],[3.398,11.53,0.277,0.207,0,"w"],[3.398,11.637,0.09,0.1,0,"w"],[4.016,11.53,0.277,0.207,0,"w"],[4.016,11.637,0.09,0.1,0,"w"],[4.964,11.53,0.277,0.207,0,"w"],[4.964,11.637,0.09,0.1,0,"w"],[5.572,11.53,0.277,0.207,0,"w"],[5.572,11.637,0.09,0.1,0,"w"],[6.211,11.53,0.277,0.207,0,"w"],[6.211,11.637,0.09,0.1,0,"w"],[2.39,5.237,1.49,0.02,0,"w"],[3.855,4.339,0.02,0.923,0,"w"],[18.203,3.92,0.601,1.1,0,"f"],[20.893,1.588,0.597,1.104,0,"f"],[15.462,1.588,0.597,1.104,0,"f"],[15.709,10.712,0.597,1.104,0,"f"],[21.115,10.712,0.597,1.104,0,"f"],[20.893,4.381,0.597,1.1,0,"f"],[41.359,7.95,0.311,1.65,0,"f"],[10.53,11.527,1.865,0.289,0,"f"],[13.068,1.665,0.294,1.181,0,"f"],[23.591,1.662,0.601,0.55,0,"f"],[18.194,1.662,0.601,0.55,0,"f"],[15.458,3.863,0.601,0.55,0,"f"],[18.446,8.972,0.597,0.55,0,"f"],[21.115,8.987,0.597,0.55,0,"f"],[15.705,8.909,0.593,0.55,0,"f"],[13.068,10.712,0.294,1.104,0,"f"],[18.288,11.266,0.439,0.55,0,"f"],[25.263,8.498,0.562,0.413,0,"f"],[26.441,6.177,0.341,0.601,0,"f"],[26.441,7.413,0.341,0.601,0,"f"],[26.441,4.946,0.341,0.597,0,"f"],[25.532,11.215,0.294,0.601,0,"f"],[23.856,8.613,0.545,0.299,0,"f"],[45.42,10.55,0.31,0.4,0,"f"],[44.14,10.55,0.31,0.4,0,"f"],[25.536,9.696,0.29,0.55,0,"f"],[47.766,10.44,0.294,0.49,0,"f"],[47.766,11.44,0.294,0.49,0,"f"],[15.458,4.698,0.601,0.209,0,"f"],[15.458,3.05,0.601,0.204,0,"f"],[44.78,10.55,0.31,0.4,0,"f"],[13.07,9.092,0.477,0.217,0,"f"],[18.407,2.58,0.311,0.307,0,"f"],[18.39,10.088,0.294,0.299,0,"f"],[9.895,3.74,1.4,0.55,0,"f"],[7.588,9.488,0.23,2.309,0,"f"],[7.583,9.488,0.225,2.328,0,"f"],[9.963,9.157,0.937,0.736,0,"f"],[28.238,10.082,1.091,1.129,0,"f"],[46.45,2.55,0.716,0.716,0,"f"],[26.85,2.4,0.4,0.4,0,"f"],[26.85,2.784,0.35,0.004,0,"f"],[34.947,10.168,0.41,0.493,-3.1416,"f"],[35.997,10.168,0.41,0.493,-3.1416,"f"],[37.282,11.117,0.41,0.493,-1.5708,"f"],[32.118,11.203,0.41,0.493,1.5708,"f"],[35.47,11.12,0.601,0.3,0.0,"f"],[32.2,10.22,0.275,0.225,0.0,"f"],[35.953,2.202,0.41,0.493,0.0,"f"],[37.253,2.202,0.41,0.493,0.0,"f"],[36.6,2.3,0.275,0.225,0.0,"f"],[45.24,0.894,0.41,0.493,2.3562,"f"],[25.38,4.4,0.45,1.1,0,"f"],[18.78,6.773,0.61,0.2025,0.0,"f"],[20.0,6.773,0.61,0.2025,0.0,"f"],[47.62,6.37,0.61,0.2025,1.5708,"f"],[47.62,7.59,0.61,0.2025,1.5708,"f"],[36.85,3.4,0.61,0.2025,0.7854,"f"],[21.22,6.773,0.61,0.2025,3.1416,"f"],[34.853,5.926,1.049,1.417,0,"f"],[45.8,6.98,0.8,0.8,0,"f"],[37.465,3.663,0.076,0.06,0.9439,"b"],[37.529,3.755,0.076,0.06,0.9749,"b"],[37.59,3.848,0.076,0.06,1.0058,"b"],[37.648,3.943,0.076,0.06,1.0367,"b"],[37.703,4.039,0.076,0.06,1.0677,"b"],[37.756,4.138,0.076,0.06,1.0986,"b"],[37.805,4.238,0.076,0.06,1.1295,"b"],[37.851,4.339,0.076,0.06,1.1604,"b"],[37.894,4.442,0.076,0.06,1.1914,"b"],[37.933,4.546,0.076,0.06,1.2223,"b"],[37.97,4.651,0.076,0.06,1.2532,"b"],[38.003,4.757,0.076,0.06,1.2842,"b"],[38.033,4.865,0.076,0.06,1.3151,"b"],[38.059,4.973,0.076,0.06,1.3461,"b"],[38.082,5.082,0.076,0.06,1.377,"b"],[38.102,5.191,0.076,0.06,1.4079,"b"],[38.118,5.301,0.076,0.06,1.4388,"b"],[38.131,5.412,0.076,0.06,1.4698,"b"],[38.141,5.523,0.076,0.06,1.5007,"b"],[38.147,5.634,0.076,0.06,1.5317,"b"],[38.149,5.745,0.076,0.06,1.5626,"b"],[38.149,5.857,0.076,0.06,1.5935,"b"],[38.144,5.968,0.076,0.06,1.6244,"b"],[38.137,6.079,0.076,0.06,1.6554,"b"],[38.106,6.187,0.079,0.06,2.0329,"b"],[38.119,6.245,0.06,0.06,0.131,"b"],[38.131,6.303,0.079,0.06,2.0603,"b"],[38.093,6.41,0.076,0.06,1.7482,"b"],[38.072,6.519,0.076,0.06,1.7791,"b"],[38.047,6.628,0.076,0.06,1.81,"b"],[38.019,6.736,0.076,0.06,1.841,"b"],[37.988,6.843,0.076,0.06,1.8719,"b"],[37.953,6.948,0.076,0.06,1.9029,"b"],[37.915,7.053,0.076,0.06,1.9338,"b"],[37.874,7.157,0.076,0.06,1.9647,"b"],[37.83,7.259,0.076,0.06,1.9956,"b"],[37.782,7.359,0.076,0.06,2.0266,"b"],[37.714,7.449,0.079,0.06,2.4041,"b"],[37.706,7.508,0.06,0.06,0.5022,"b"],[37.696,7.566,0.079,0.06,2.4315,"b"],[37.621,7.652,0.076,0.06,2.1194,"b"],[37.562,7.746,0.076,0.06,2.1503,"b"],[37.499,7.838,0.076,0.06,2.1812,"b"],[37.434,7.929,0.076,0.06,2.2122,"b"],[37.366,8.017,0.076,0.06,2.2431,"b"],[37.296,8.103,0.076,0.06,2.274,"b"],[37.222,8.187,0.076,0.06,2.305,"b"],[37.146,8.268,0.076,0.06,2.3359,"b"],[37.068,8.347,0.076,0.06,2.3668,"b"],[36.987,8.424,0.076,0.06,2.3977,"b"],[36.904,8.498,0.076,0.06,2.4287,"b"],[36.819,8.569,0.076,0.06,2.4596,"b"],[36.731,8.638,0.076,0.06,2.4906,"b"],[36.642,8.704,0.076,0.06,2.5215,"b"],[36.55,8.768,0.076,0.06,2.5524,"b"],[36.457,8.828,0.076,0.06,2.5833,"b"],[36.361,8.886,0.076,0.06,2.6143,"b"],[36.264,8.94,0.076,0.06,2.6452,"b"],[36.166,8.992,0.076,0.06,2.6762,"b"],[36.065,9.04,0.076,0.06,2.7071,"b"],[35.964,9.085,0.076,0.06,2.738,"b"],[35.861,9.128,0.076,0.06,2.7689,"b"],[35.756,9.166,0.076,0.06,2.7999,"b"],[35.651,9.202,0.076,0.06,2.8308,"b"],[35.544,9.235,0.076,0.06,2.8617,"b"],[35.432,9.244,0.079,0.06,-3.0439,"b"],[35.383,9.277,0.06,0.06,1.3374,"b"],[35.333,9.309,0.079,0.06,-3.0165,"b"],[35.219,9.312,0.076,0.06,2.9546,"b"],[35.11,9.331,0.076,0.06,2.9855,"b"],[34.999,9.346,0.076,0.06,3.0164,"b"],[34.887,9.339,0.079,0.06,-2.8892,"b"],[34.833,9.364,0.06,0.06,1.492,"b"],[34.779,9.387,0.079,0.06,-2.8618,"b"],[34.667,9.373,0.076,0.06,3.1092,"b"],[34.555,9.375,0.076,0.06,3.1401,"b"],[3.104,3.669,2.204,1.568,0,"v"],[43.42,1.65,1.0,1.3,0,"v"],[30.85,0.12,0.55,0.12,0,"w"],[0.62,6.6,0.07,0.45,0,"w"]],"doors":[{"n":"Leaf_Entrance","t":"Entrance","cx":6.265,"cy":6.4,"base":-1.5708,"auto":1},{"n":"Leaf_D.13","t":"D.13","cx":8.815,"cy":5.476,"base":0.0,"auto":1},{"n":"Leaf_D.14","t":"D.14","cx":12.494,"cy":5.975,"base":-1.5708,"auto":1},{"n":"Leaf_D.15","t":"D.15","cx":12.494,"cy":7.99,"base":-1.5708,"auto":1},{"n":"Leaf_D.16","t":"D.16","cx":23.91,"cy":7.08,"base":0.0,"auto":1},{"n":"Leaf_D.17","t":"D.17","cx":25.085,"cy":7.08,"base":0.0,"auto":1},{"n":"Leaf_D.19","t":"D.19","cx":24.245,"cy":10.99,"base":-1.5708,"auto":1},{"n":"Leaf_D.08","t":"D.08","cx":40.025,"cy":6.17,"base":0.0,"auto":1},{"n":"Leaf_D.04","t":"D.04","cx":30.285,"cy":2.71,"base":1.5708,"auto":1},{"n":"Leaf_D.05","t":"D.05","cx":41.805,"cy":5.2,"base":1.5708,"auto":1},{"n":"Leaf_D.10","t":"D.10","cx":41.805,"cy":10.315,"base":1.5708,"auto":1},{"n":"Leaf_D.01","t":"D.01","cx":25.965,"cy":1.245,"base":1.5708,"auto":1},{"n":"Leaf_D.09","t":"D.09","cx":27.97,"cy":3.75,"base":0.0,"auto":1},{"n":"Leaf_D.07","t":"D.07","cx":29.415,"cy":3.7,"base":0.0,"auto":1},{"n":"Leaf_D.03","t":"D.03","cx":40.025,"cy":4.365,"base":0.0,"auto":1},{"n":"Leaf_D.11","t":"D.11","cx":42.035,"cy":3.68,"base":1.5708,"auto":1},{"n":"Leaf_D.12","t":"D.12","cx":44.54,"cy":3.635,"base":1.5708,"auto":1},{"n":"Leaf_WC_W","t":"WC_W","cx":1.285,"cy":7.056,"base":0.0,"auto":1},{"n":"Leaf_WC_E","t":"WC_E","cx":4.918,"cy":7.056,"base":0.0,"auto":1},{"n":"Leaf_WC_W_inner","t":"WC_W_inner","cx":1.285,"cy":8.815,"base":0.0,"auto":1},{"n":"Leaf_WC_E_inner","t":"WC_E_inner","cx":4.918,"cy":9.294,"base":0.0,"auto":1},{"n":"Leaf_D.06","t":"D.06","cx":33.225,"cy":9.575,"base":3.1416,"auto":1},{"n":"Leaf_D.02","t":"D.02","cx":29.195,"cy":1.87,"base":0.0,"auto":1},{"n":"Leaf_D.18","t":"D.18","cx":23.7,"cy":10.345,"base":0.0,"auto":1},{"n":"Leaf_Riser","t":"Riser","cx":5.898,"cy":5.486,"base":0.0,"auto":1},{"n":"Leaf_Yard_exit","t":"Yard_exit","cx":30.85,"cy":0.175,"base":0.0,"auto":0},{"n":"Leaf_West_exit","t":"West_exit","cx":0.725,"cy":6.6,"base":1.5708,"auto":1}]}</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const COLL = JSON.parse(document.getElementById('coll').textContent);
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+if (isTouch) document.body.classList.add('mobile');
+
+// Blender plan coords (x east, y north) <-> three (x, y up, z = -y)
+const EYE = 1.62, RADIUS = 0.22;
+const ROOMS = [
+  ['Stair lobby',      3.2, 6.30,   0, [0.9,5.57,6.19,6.96]],
+  ['Tea point',        9.4, 6.90,  90, [6.34,5.57,12.4,11.95]],
+  ['Meeting room',    11.9, 4.90, 200, [7.39,2.1,12.4,5.38]],
+  ['Novara office',   19.3, 6.25, -90, [12.59,0.35,25.83,6.985]],
+  ['Co-working',      19.3, 7.70,  90, [12.59,7.175,23.0,11.95]],
+  ['Phone booths',    23.8, 9.60, 180, [23.0,7.175,25.83,11.95]],
+  ['Gallery',         28.6, 5.60,  90, [26.1,3.8,30.15,11.95]],
+  ['Server room',     27.8, 3.20, 180, [26.1,2.0,28.41,3.62]],
+  ['Studio 1',        32.6, 4.40,  35, [30.42,2.0,39.09,9.44]],
+  ['Green room',      38.6, 10.5, 180, [31.32,9.71,39.29,11.95]],
+  ['Tech equipment',  40.5, 8.20,  90, [39.29,6.27,41.67,11.95]],
+  ['Reception',       33.0, 1.05,   0, [32.85,1.74,39.09,2.62]],
+  ['Protected lobby', 27.2, 1.00,   0, [26.1,0.35,42.28,1.74]],
+  ['Studio 2',        42.6, 7.00,   0, [41.94,4.5,47.96,9.45]],
+  ['Editing suite',   46.7, 10.0, 180, [41.94,9.72,48.06,11.95]],
+  ['Meeting room E',  45.2, 3.70, -35, [44.7,0.35,48.06,4.03]],
+  ['WCs',              2.5, 7.60,  90, [0.9,7.16,7.1,11.95]],
+];
+const LOBBIES = [['Studio 1 lobby',[28.68,2.0,30.15,3.61]],['Studio 2 lobby',[39.36,4.5,41.67,6.08]],['Lift lobby',[42.13,3.09,44.46,4.23]],['Protected lobby',[39.36,1.74,42.28,4.23]],['Stair',[0.9,1.97,5.31,5.6]]];
+
+// ---------- renderer
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, isTouch ? 1.5 : 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.92;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xbfd6ea);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(renderer), 0.04).texture;
+scene.add(new THREE.HemisphereLight(0xeef3ff, 0x6f6a62, 0.5));
+const sun = new THREE.DirectionalLight(0xfff1dc, 1.35);
+sun.position.set(-40, 60, 30); scene.add(sun);
+
+const camera = new THREE.PerspectiveCamera(isTouch ? 72 : 62, innerWidth / innerHeight, 0.05, 900);
+camera.rotation.order = 'YXZ';
+
+// ---------- player state
+const P = { x: 3.2, y: 6.3, yaw: 0, pitch: -0.03 };   // yaw: plan angle of view, radians
+function placeCamera() {
+  camera.position.set(P.x, EYE, -P.y);
+  camera.rotation.set(P.pitch, P.yaw - Math.PI / 2, 0);
+}
+function teleport(x, y, deg) { P.x = x; P.y = y; if (deg !== undefined) P.yaw = deg * Math.PI / 180; P.pitch = -0.03; resolve(); placeCamera(); }
+
+// ---------- collision
+const R = COLL.rects.map(([cx, cy, hx, hy, a]) => ({ cx, cy, hx, hy, c: Math.cos(a), s: Math.sin(a) }));
+function resolve() {
+  for (let it = 0; it < 4; it++) {
+    let moved = false;
+    for (const r of R) {
+      const dx = P.x - r.cx, dy = P.y - r.cy;
+      if (Math.abs(dx) > r.hx + r.hy + 1 || Math.abs(dy) > r.hx + r.hy + 1) continue;
+      const lx = dx * r.c + dy * r.s, ly = -dx * r.s + dy * r.c;
+      const qx = Math.max(-r.hx, Math.min(r.hx, lx)), qy = Math.max(-r.hy, Math.min(r.hy, ly));
+      let ex = lx - qx, ey = ly - qy, d = Math.hypot(ex, ey), px = 0, py = 0;
+      if (d >= RADIUS) continue;
+      if (d > 1e-6) { const k = (RADIUS - d) / d; px = ex * k; py = ey * k; }
+      else { const ox = r.hx - Math.abs(lx), oy = r.hy - Math.abs(ly);
+        if (ox < oy) px = Math.sign(lx || 1) * (ox + RADIUS); else py = Math.sign(ly || 1) * (oy + RADIUS); }
+      P.x += px * r.c - py * r.s; P.y += px * r.s + py * r.c; moved = true;
+    }
+    if (!moved) break;
+  }
+}
+
+// ---------- doors
+const doors = [];
+function tickDoors(dt) {
+  for (const d of doors) {
+    const dist = Math.hypot(P.x - d.cx, P.y - d.cy);
+    if (dist < 1.35 && d.tgt === 0 && d.auto) {
+      const nx = -Math.sin(d.base), ny = Math.cos(d.base);
+      const s = (P.x - d.cx) * nx + (P.y - d.cy) * ny;
+      d.tgt = (s < 0 ? 1 : -1) * THREE.MathUtils.degToRad(88);
+    } else if (dist > 1.9) d.tgt = 0;
+    if (d.ang !== d.tgt) {
+      const step = dt * 4.2, diff = d.tgt - d.ang;
+      d.ang += Math.abs(diff) < step ? diff : Math.sign(diff) * step;
+      d.node.quaternion.copy(d.q0).premultiply(new THREE.Quaternion().setFromAxisAngle(UP, d.ang));
+    }
+  }
+}
+const UP = new THREE.Vector3(0, 1, 0);
+
+// ---------- load + optimise
+const status = document.getElementById('status'), barFill = document.getElementById('barFill'), enter = document.getElementById('enter');
+const loader = new GLTFLoader();
+async function fetchModel() {
+  const res = await fetch('fh3.glb');
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const tot = +res.headers.get('content-length') || 5045376;
+  const reader = res.body.getReader(); const chunks = []; let got = 0;
+  for (;;) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); got += value.length;
+    barFill.style.width = `${Math.min(100, got / tot * 100)}%`; status.textContent = `${Math.min(99, Math.round(got / tot * 100))}%`; }
+  return await new Blob(chunks).arrayBuffer();
+}
+fetchModel().then(buf => loader.parse(buf, '', gltf => {
+  const root = gltf.scene;
+  root.updateMatrixWorld(true);
+  const doorByTag = Object.fromEntries(COLL.doors.map(d => [d.t, d]));
+  const keep = new Set(), groups = new Map();
+  root.traverse(o => {
+    const m = o.userData && o.userData.door ? doorByTag[o.userData.door] : null;
+    if (m) {
+      doors.push({ node: o, q0: o.quaternion.clone(), cx: m.cx, cy: m.cy, base: m.base, auto: m.auto, ang: 0, tgt: 0 });
+      o.traverse(c => keep.add(c));
+    }
+  });
+  const disposable = [];
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) tuneMaterial(m);
+    if (keep.has(o) || o.isInstancedMesh || Array.isArray(o.material)) return;
+    const g = o.geometry.clone();
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+    if (!o.material.map) g.deleteAttribute('uv');
+    for (const k of Object.keys(g.attributes)) {
+      const a = g.attributes[k];
+      if (!(a.array instanceof Float32Array) || a.isInterleavedBufferAttribute) {
+        const f = new Float32Array(a.count * a.itemSize);
+        const get = [a.getX, a.getY, a.getZ, a.getW]; for (let i = 0; i < a.count; i++) for (let j = 0; j < a.itemSize; j++) f[i * a.itemSize + j] = get[j].call(a, i);
+        g.setAttribute(k, new THREE.BufferAttribute(f, a.itemSize));
+      }
+    }
+    if (!g.attributes.normal) g.computeVertexNormals();
+    g.applyMatrix4(o.matrixWorld);
+    const gi = g.index ? g.toNonIndexed() : g;
+    const key = o.material.uuid + (gi.attributes.uv ? ':uv' : '');
+    if (!groups.has(key)) groups.set(key, { mat: o.material, geos: [] });
+    groups.get(key).geos.push(gi);
+    disposable.push(o);
+  });
+  for (const o of disposable) o.parent && o.parent.remove(o);
+  const merged = new THREE.Group();
+  for (const { mat, geos } of groups.values()) {
+    const g = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+    if (!g) continue;
+    const mesh = new THREE.Mesh(g, mat); mesh.matrixAutoUpdate = false; merged.add(mesh);
+  }
+  scene.add(merged); scene.add(root);
+  enter.disabled = false; enter.textContent = 'Enter'; status.textContent = 'Model loaded';
+  barFill.style.width = '100%';
+  teleport(3.2, 6.3, 0);
+  drawPlanBase();
+}, err => { status.textContent = 'The model did not load. Reload the page to try again.'; console.error(err); }))
+.catch(err => { status.textContent = 'The model did not load. Reload the page to try again.'; console.error(err); });
+
+function tuneMaterial(m) {
+  if (m.userData.tuned) return; m.userData.tuned = true;
+  m.side = THREE.DoubleSide;
+  m.envMapIntensity = 0.55;
+  if (m.name === 'Glass') { m.transparent = true; m.opacity = 0.12; m.depthWrite = false; m.roughness = 0.05; m.metalness = 0; m.color.set(0xd8e6ee); m.side = THREE.FrontSide; }
+  if (m.name.startsWith('Ctx_')) { m.envMapIntensity = 0.4; }
+  if (m.emissiveIntensity > 0 && m.emissive && m.emissive.getHex() !== 0) m.toneMapped = true;
+}
+
+// ---------- input
+const keys = new Set();
+addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('input,textarea')) return;
+  keys.add(e.code);
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+
+const canvas = renderer.domElement;
+let locked = false;
+canvas.addEventListener('click', () => { if (!isTouch && !locked && started) { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} } });
+document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === canvas; });
+addEventListener('mousemove', e => {
+  if (!started || isTouch) return;
+  if (locked || dragMouse) look(e.movementX, e.movementY, 0.0022);
+});
+let dragMouse = false;
+canvas.addEventListener('mousedown', () => { if (!locked) dragMouse = true; });
+addEventListener('mouseup', () => { dragMouse = false; });
+function look(dx, dy, k) {
+  P.yaw -= dx * k; P.pitch = Math.max(-1.35, Math.min(1.35, P.pitch - dy * k));
+}
+
+// touch: left half = joystick, right half = look
+const stick = document.getElementById('stick'), knob = stick.querySelector('i');
+let moveTouch = null, lookTouch = null, joy = { x: 0, y: 0 };
+canvas.addEventListener('touchstart', e => {
+  if (!started) return;
+  for (const t of e.changedTouches) {
+    if (t.clientX < innerWidth * 0.45 && moveTouch === null) {
+      moveTouch = { id: t.identifier, x0: t.clientX, y0: t.clientY };
+      stick.style.left = t.clientX + 'px'; stick.style.top = t.clientY + 'px'; stick.hidden = false; knob.style.transform = '';
+    } else if (lookTouch === null) lookTouch = { id: t.identifier, x: t.clientX, y: t.clientY };
+  }
+  e.preventDefault();
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (moveTouch && t.identifier === moveTouch.id) {
+      let dx = t.clientX - moveTouch.x0, dy = t.clientY - moveTouch.y0; const L = Math.hypot(dx, dy), max = 52;
+      if (L > max) { dx *= max / L; dy *= max / L; }
+      joy.x = dx / max; joy.y = dy / max; knob.style.transform = `translate(${dx}px,${dy}px)`;
+    } else if (lookTouch && t.identifier === lookTouch.id) {
+      look(t.clientX - lookTouch.x, t.clientY - lookTouch.y, 0.0048); lookTouch.x = t.clientX; lookTouch.y = t.clientY;
+    }
+  }
+  e.preventDefault();
+}, { passive: false });
+function endTouch(e) {
+  for (const t of e.changedTouches) {
+    if (moveTouch && t.identifier === moveTouch.id) { moveTouch = null; joy.x = joy.y = 0; stick.hidden = true; }
+    if (lookTouch && t.identifier === lookTouch.id) lookTouch = null;
+  }
+}
+canvas.addEventListener('touchend', endTouch); canvas.addEventListener('touchcancel', endTouch);
+
+// ---------- UI
+let started = false;
+const $ = id => document.getElementById(id);
+enter.addEventListener('click', () => {
+  started = true; $('intro').hidden = true;
+  for (const id of ['where', 'tools', 'plan', 'dot']) $(id).hidden = false;
+  if (isTouch) { $('hint').hidden = false; setTimeout(() => $('hint').hidden = true, 6000); $('dot').hidden = true; }
+  else { try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
+  if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(() => {});
+});
+const roomsNav = $('rooms');
+for (const [name, x, y, deg] of ROOMS) {
+  const b = document.createElement('button');
+  b.innerHTML = `<b>${name}</b><span>${x.toFixed(1)}, ${y.toFixed(1)}</span>`;
+  b.addEventListener('click', () => { teleport(x, y, deg); roomsNav.hidden = true; $('roomsBtn').setAttribute('aria-expanded', 'false'); });
+  roomsNav.appendChild(b);
+}
+$('roomsBtn').addEventListener('click', () => { const open = roomsNav.hidden; roomsNav.hidden = !open; $('roomsBtn').setAttribute('aria-expanded', String(open)); if (open && locked) document.exitPointerLock(); });
+$('mapBtn').addEventListener('click', () => { const on = $('plan').hidden; $('plan').hidden = !on; $('mapBtn').setAttribute('aria-pressed', String(on)); });
+
+// ---------- plan
+const pc = $('planCanvas'), pctx = pc.getContext('2d');
+const PX0 = 0.2, PX1 = 48.8, PY0 = -0.3, PY1 = 12.6;
+const S = pc.width / (PX1 - PX0);
+pc.height = Math.round((PY1 - PY0) * S);
+const toPx = (x, y) => [(x - PX0) * S, (PY1 - y) * S];
+let planBase = null;
+function drawPlanBase() {
+  const c = document.createElement('canvas'); c.width = pc.width; c.height = pc.height; const g = c.getContext('2d');
+  g.fillStyle = '#16191a'; g.fillRect(0, 0, c.width, c.height);
+  // rooms
+  g.font = `500 ${Math.round(S * 0.42)}px "IBM Plex Mono", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  for (const [name, , , , b] of ROOMS) {
+    const [x0, y0] = toPx(b[0], b[3]), [x1, y1] = toPx(b[2], b[1]);
+    g.fillStyle = name.startsWith('Studio') ? '#232627' : '#1d2021'; g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  }
+  const shape = (r, fill) => {
+    const [cx, cy, hx, hy, a] = r; g.save(); const [px, py] = toPx(cx, cy); g.translate(px, py); g.rotate(-a);
+    g.fillStyle = fill; g.fillRect(-hx * S, -hy * S, 2 * hx * S, 2 * hy * S); g.restore();
+  };
+  for (const r of COLL.rects) if (r[5] === 'f') shape(r, '#4a4640');
+  for (const r of COLL.rects) if (r[5] === 'v') shape(r, '#2b2e30');
+  for (const r of COLL.rects) if (r[5] === 'b') shape(r, '#ff1941');
+  for (const r of COLL.rects) if (r[5] === 'w') shape(r, '#ece8e0');
+  g.fillStyle = '#a7a39b';
+  for (const [name, , , , b] of ROOMS) {
+    if (name === 'WCs' || name === 'Server room' || name === 'Phone booths') continue;
+    const [px, py] = toPx((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+    g.fillText(name.toUpperCase(), px, py);
+  }
+  planBase = c;
+}
+function drawPlan() {
+  if (!planBase || $('plan').hidden) return;
+  pctx.drawImage(planBase, 0, 0);
+  const [px, py] = toPx(P.x, P.y);
+  pctx.save(); pctx.translate(px, py); pctx.rotate(-P.yaw);
+  const fov = THREE.MathUtils.degToRad(camera.fov * camera.aspect) / 2, L = S * 3.2;
+  const grd = pctx.createRadialGradient(0, 0, 0, 0, 0, L); grd.addColorStop(0, 'rgba(255,25,65,.55)'); grd.addColorStop(1, 'rgba(255,25,65,0)');
+  pctx.fillStyle = grd; pctx.beginPath(); pctx.moveTo(0, 0); pctx.arc(0, 0, L, -Math.min(fov, 1.2), Math.min(fov, 1.2)); pctx.closePath(); pctx.fill();
+  pctx.fillStyle = '#ff1941'; pctx.beginPath(); pctx.arc(0, 0, S * 0.32, 0, Math.PI * 2); pctx.fill();
+  pctx.strokeStyle = '#fff'; pctx.lineWidth = S * 0.08; pctx.stroke();
+  pctx.restore();
+}
+pc.addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation();
+  const r = pc.getBoundingClientRect();
+  const x = PX0 + (e.clientX - r.left) / r.width * (PX1 - PX0), y = PY1 - (e.clientY - r.top) / r.height * (PY1 - PY0);
+  const before = [P.x, P.y]; P.x = x; P.y = y; resolve();
+  if (Math.hypot(P.x - x, P.y - y) > 0.6 || x < 0.9 || x > 48 || y < 0.4 || y > 11.9) { P.x = before[0]; P.y = before[1]; }
+  placeCamera();
+});
+
+function roomAt(x, y) {
+  for (const [n, b] of LOBBIES) if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) return n;
+  for (const [n, , , , b] of ROOMS) if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) return n;
+  return 'Corridor';
+}
+
+// ---------- loop
+const clock = new THREE.Clock();
+let lastRoom = '', frame = 0;
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  if (started) {
+    let f = 0, s = 0;
+    if (keys.has('KeyW') || keys.has('ArrowUp')) f += 1;
+    if (keys.has('KeyS') || keys.has('ArrowDown')) f -= 1;
+    if (keys.has('KeyD')) s += 1;
+    if (keys.has('KeyA')) s -= 1;
+    if (keys.has('ArrowLeft')) P.yaw += dt * 1.8;
+    if (keys.has('ArrowRight')) P.yaw -= dt * 1.8;
+    f -= joy.y; s += joy.x;
+    const mag = Math.hypot(f, s);
+    if (mag > 1) { f /= mag; s /= mag; }
+    const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight')) ? 3.0 : 1.45;
+    const cx = Math.cos(P.yaw), cy = Math.sin(P.yaw);
+    P.x += (cx * f + cy * s) * speed * dt;
+    P.y += (cy * f - cx * s) * speed * dt;
+    resolve();
+    tickDoors(dt);
+    placeCamera();
+    if (++frame % 10 === 0) {
+      const r = roomAt(P.x, P.y);
+      if (r !== lastRoom) { lastRoom = r; $('roomName').textContent = r; }
+      $('coords').textContent = `x ${P.x.toFixed(1)} · y ${P.y.toFixed(1)}`;
+    }
+    drawPlan();
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+placeCamera();
+loop();
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+
+</body>
+</html>
