@@ -11,6 +11,6 @@ The model is built in Blender from zector architects' drawings (095/101 rev E an
 ## Files
 
 - `index.html` is the whole app. It loads three.js 0.160 from jsDelivr.
-- `fh3.glb` is the model, exported from `FH3_GA_plan_3rd_floor V1.blend`.
+- `fh3.glb` is the model, exported from `FH3_GA_plan_3rd_floor V2.blend`.
 
 To update the model, export a new `fh3.glb` and replace the file.
