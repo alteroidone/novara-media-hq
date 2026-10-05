@@ -283,6 +283,7 @@ fetchModel().then(buf => loader.parse(buf, '', gltf => {
     if (!o.isMesh) return;
     const mats = Array.isArray(o.material) ? o.material : [o.material];
     for (const m of mats) tuneMaterial(m);
+    o.material = Array.isArray(o.material) ? o.material.map(m => fixMaterial(o, m)) : fixMaterial(o, o.material);
     if (keep.has(o) || o.isInstancedMesh || Array.isArray(o.material)) return;
     const g = o.geometry.clone();
     for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
@@ -318,6 +319,39 @@ fetchModel().then(buf => loader.parse(buf, '', gltf => {
   drawPlanBase();
 }, err => { status.textContent = 'The model did not load. Reload the page to try again.'; console.error(err); }))
 .catch(err => { status.textContent = 'The model did not load. Reload the page to try again.'; console.error(err); });
+
+// Blender materials that tint a library texture, or map it with generated coordinates
+// (no UVs in the export), don't survive glTF: drop their textures and keep the flat colour.
+const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap'];
+const FLAT_RGB = {   // colours from model v2 for materials whose v3 export carries only a texture
+  Door_Oak: [0.632, 0.494, 0.342], painted_concrete_02: [0.336, 0.325, 0.300], PLY_BIRCH_18: [0.494, 0.379, 0.252],
+};
+const BOOK_RGB = [[0.55,0.08,0.08],[0.08,0.16,0.35],[0.12,0.28,0.18],[0.85,0.78,0.62],[0.12,0.12,0.12],[0.72,0.45,0.12],
+  [0.9,0.9,0.86],[0.35,0.1,0.25],[0.2,0.45,0.6],[0.6,0.55,0.35],[0.85,0.1,0.22],[0.3,0.3,0.32]];
+const bookMats = BOOK_RGB.map(([r, g, b], i) => {
+  const m = new THREE.MeshStandardMaterial({ name: 'Book_' + i, roughness: 0.85 }); m.color.setRGB(r, g, b); tuneMaterial(m); return m;
+});
+const flatCache = new Map();
+function flatten(m) {
+  if (!flatCache.has(m.uuid)) {
+    const c = m.clone();
+    if (c.roughnessMap) c.roughness = Math.min(c.roughness, 0.75);
+    for (const k of TEX_SLOTS) c[k] = null;
+    if (FLAT_RGB[m.name]) c.color.setRGB(...FLAT_RGB[m.name]);
+    c.userData.tuned = true;
+    flatCache.set(m.uuid, c);
+  }
+  return flatCache.get(m.uuid);
+}
+function fixMaterial(o, m) {
+  if (/^(book|catalogue)_/.test(m.name)) {   // cover colours came from shader nodes; use the v2 spine palette
+    let h = 0; for (const ch of o.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return bookMats[h % bookMats.length];
+  }
+  if (!TEX_SLOTS.some(k => m[k])) return m;
+  const tinted = m.map && (m.color.r < 0.999 || m.color.g < 0.999 || m.color.b < 0.999);
+  return tinted || !o.geometry.attributes.uv ? flatten(m) : m;
+}
 
 function tuneMaterial(m) {
   if (m.userData.tuned) return; m.userData.tuned = true;
